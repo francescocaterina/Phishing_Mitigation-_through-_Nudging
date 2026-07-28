@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureMail Web Client</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background-color: #f4f6f9;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .app-view {
+            display: none;
+            height: 100%;
+        }
+        
+        .app-view.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Auth Views Styling */
+        .auth-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .auth-card {
+            width: 100%;
+            max-width: 400px;
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+        }
+
+        /* Dashboard/Inbox Styling */
+        .main-navbar {
+            background-color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            z-index: 10;
+        }
+
+        .dashboard-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 250px;
+            background-color: #ffffff;
+            border-right: 1px solid #e9ecef;
+            padding: 20px 10px;
+            overflow-y: auto;
+        }
+
+        .sidebar .nav-link {
+            color: #495057;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            background-color: #e9ecef;
+            color: #0d6efd;
+            font-weight: 500;
+        }
+
+        .email-list-pane {
+            width: 350px;
+            background-color: #ffffff;
+            border-right: 1px solid #e9ecef;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .email-item {
+            padding: 15px;
+            border-bottom: 1px solid #e9ecef;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .email-item:hover, .email-item.selected {
+            background-color: #f8f9fa;
+        }
+
+        .email-item.unread {
+            font-weight: bold;
+            background-color: #f0f7ff;
+        }
+
+        /* H08 Violation Style: Benign, standard pop-up style that blends in */
+        .email-item.system-alert {
+            background-color: #ffffff;
+            border-left: 4px solid #6c757d; 
+            margin: 10px;
+            border-radius: 6px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+            border-bottom: none;
+        }
+        .email-item.system-alert:hover {
+            background-color: #fdfdfd;
+        }
+
+        .reading-pane {
+            flex: 1;
+            background-color: #f4f6f9;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .email-content-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+            padding: 30px;
+            min-height: 100%;
+        }
+
+        /* Account View */
+        .account-wrapper {
+            flex: 1;
+            padding: 40px 20px;
+            overflow-y: auto;
+        }
+
+        /* Global Alert */
+        #global-alert {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        /* H26 Modal rule styling */
+        .pwd-rules {
+            font-size: 0.8rem;
+            color: #6c757d;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .pwd-rules ul {
+            padding-left: 20px;
+            margin-bottom: 0;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="global-alert" class="alert d-none alert-dismissible fade show" role="alert">
+        <span id="global-alert-text"></span>
+        <button type="button" class="btn-close" onclick="document.getElementById('global-alert').classList.add('d-none')"></button>
+    </div>
+
+    <div class="modal fade" id="passwordChangeModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="passwordChangeModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title fw-bold" id="passwordChangeModalLabel"><i class="fa-solid fa-lock me-2"></i> Mandatory Security Update</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3 text-dark fw-semibold">Your password has expired (30-day corporate policy). You must change it immediately before accessing your inbox.</p>
+                    
+                    <div class="pwd-rules">
+                        <strong class="text-danger">Complex Policy Requirements:</strong>
+                        <ul>
+                            <li>Minimum 12 characters</li>
+                            <li>Must contain at least 1 uppercase, 1 lowercase, 1 number, and 1 special character (!@#$%^&*)</li>
+                            <li>Cannot contain your name, username, or company name</li>
+                            <li>Cannot be identical to your previous password</li>
+                        </ul>
+                    </div>
+
+                    <form id="form-mandatory-pwd" onsubmit="handleMandatoryPasswordChange(event)">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-bold">New Password</label>
+                            <input type="password" id="mand-new-pwd" class="form-control" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-bold">Confirm New Password</label>
+                            <input type="password" id="mand-confirm-pwd" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-danger w-100 fw-bold">Update Password & Continue</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-login" class="app-view active">
+        <div class="auth-container">
+            <div class="card auth-card">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <i class="fa-solid fa-envelope-open-text text-primary fs-1 mb-3"></i>
+                        <h4 class="fw-bold">Sign In to SecureMail</h4>
+                    </div>
+                    <form id="form-login" onsubmit="handleLogin(event)">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-bold">Email address</label>
+                            <input type="email" id="login-email" class="form-control form-control-lg" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-bold">Password</label>
+                            <input type="password" id="login-password" class="form-control form-control-lg" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Sign In</button>
+                    </form>
+                    <div class="mt-4 text-center">
+                        <a href="#" onclick="switchView('view-recovery')" class="text-decoration-none small">Forgot Password?</a>
+                        <hr class="text-muted">
+                        <span class="small text-muted">Don't have an account? </span>
+                        <a href="#" onclick="switchView('view-register')" class="text-decoration-none small fw-bold">Create one</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-register" class="app-view">
+        <div class="auth-container">
+            <div class="card auth-card">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <i class="fa-solid fa-user-plus text-primary fs-1 mb-3"></i>
+                        <h4 class="fw-bold">Create Account</h4>
+                    </div>
+                    <form id="form-register" onsubmit="handleRegister(event)">
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-bold">Full Name</label>
+                            <input type="text" id="reg-name" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-bold">Email address</label>
+                            <input type="email" id="reg-email" class="form-control" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label text-muted small fw-bold">Password</label>
+                            <input type="password" id="reg-password" class="form-control" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-bold">Confirm Password</label>
+                            <input type="password" id="reg-password-confirm" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Register</button>
+                    </form>
+                    <div class="mt-4 text-center">
+                        <span class="small text-muted">Already have an account? </span>
+                        <a href="#" onclick="switchView('view-login')" class="text-decoration-none small fw-bold">Sign in here</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-recovery" class="app-view">
+        <div class="auth-container">
+            <div class="card auth-card">
+                <div class="card-body p-4 p-md-5">
+                    <div class="text-center mb-4">
+                        <i class="fa-solid fa-unlock-keyhole text-primary fs-1 mb-3"></i>
+                        <h4 class="fw-bold">Recover Password</h4>
+                        <p class="text-muted small">Enter your email and we'll send you instructions.</p>
+                    </div>
+                    <form id="form-recovery" onsubmit="handleRecovery(event)">
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-bold">Email address</label>
+                            <input type="email" id="rec-email" class="form-control form-control-lg" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold">Send Recovery Link</button>
+                    </form>
+                    <div class="mt-4 text-center">
+                        <a href="#" onclick="switchView('view-login')" class="text-decoration-none small fw-bold"><i class="fa-solid fa-arrow-left"></i> Back to Sign In</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-inbox" class="app-view">
+        <nav class="navbar navbar-expand-lg main-navbar">
+            <div class="container-fluid px-4">
+                <a class="navbar-brand fw-bold text-primary" href="#" onclick="switchView('view-inbox')">
+                    <i class="fa-solid fa-envelope-open-text"></i> SecureMail
+                </a>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="text-muted small" id="navbar-user-name">Loading...</span>
+                    <button class="btn btn-light rounded-circle" onclick="switchView('view-account')" title="Account Settings">
+                        <i class="fa-solid fa-user"></i>
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="handleLogout()">Logout</button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="dashboard-container">
+            <div class="sidebar d-none d-md-block">
+                <button class="btn btn-primary w-100 mb-4 fw-bold shadow-sm" onclick="showUIMessage('Compose feature is a stub for future heuristic testing.', 'info')">
+                    <i class="fa-solid fa-pen-to-square me-2"></i> Compose
+                </button>
+                <div class="nav flex-column">
+                    <a class="nav-link active" href="#" onclick="renderEmails('inbox')"><i class="fa-solid fa-inbox fa-fw"></i> Inbox</a>
+                    <a class="nav-link" href="#" onclick="showUIMessage('Folder stub', 'secondary')"><i class="fa-regular fa-paper-plane fa-fw"></i> Sent</a>
+                    <a class="nav-link" href="#" onclick="showUIMessage('Folder stub', 'secondary')"><i class="fa-solid fa-file-lines fa-fw"></i> Drafts</a>
+                    <a class="nav-link" href="#" onclick="showUIMessage('Folder stub', 'secondary')"><i class="fa-solid fa-trash fa-fw"></i> Trash</a>
+                </div>
+            </div>
+
+            <div class="email-list-pane">
+                <div class="p-3 border-bottom bg-light">
+                    <div class="input-group">
+                        <span class="input-group-text bg-white border-end-0"><i class="fa-solid fa-search text-muted"></i></span>
+                        <input type="text" class="form-control border-start-0" placeholder="Search mail..." onkeyup="showUIMessage('Search is a stub', 'secondary')">
+                    </div>
+                </div>
+                <div id="email-list-container" class="flex-1 overflow-auto bg-light">
+                    </div>
+            </div>
+
+            <div class="reading-pane d-none d-md-block">
+                <div id="reading-pane-content" class="email-content-card d-none">
+                    <div class="d-flex justify-content-between align-items-start mb-4 border-bottom pb-3">
+                        <div>
+                            <h3 id="read-subject" class="fw-bold mb-1">Subject</h3>
+                            <div class="text-muted small">
+                                From: <strong id="read-from-name" class="text-dark">sender name</strong>
+                                <button onclick="document.getElementById('read-from-email').classList.toggle('d-none')" class="btn btn-link btn-sm p-0 text-decoration-none ms-1" style="font-size: 0.75rem;">More details</button>
+                                <div id="read-from-email" class="d-none text-muted mt-1">&lt;<span id="read-from-address">email</span>&gt;</div>
+                                <div class="mt-1">Date: <span id="read-date">date</span></div>
+                            </div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="btn btn-light btn-sm" title="Reply"><i class="fa-solid fa-reply"></i></button>
+                            <button class="btn btn-light btn-sm" title="Forward"><i class="fa-solid fa-share"></i></button>
+                            <button class="btn btn-light btn-sm text-danger" title="Delete"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                    <div id="read-body" class="email-body lh-lg" style="white-space: normal;">
+                        Email content goes here...
+                    </div>
+                </div>
+                <div id="reading-pane-empty" class="h-100 d-flex flex-column align-items-center justify-content-center text-muted">
+                    <i class="fa-regular fa-envelope-open fs-1 mb-3 text-light-subtle"></i>
+                    <h5>Select an item to read</h5>
+                    <p class="small">Nothing is selected</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-account" class="app-view">
+         <nav class="navbar navbar-expand-lg main-navbar">
+            <div class="container-fluid px-4">
+                <a class="navbar-brand fw-bold text-primary" href="#" onclick="switchView('view-inbox')">
+                    <i class="fa-solid fa-arrow-left me-2"></i> Back to Inbox
+                </a>
+            </div>
+        </nav>
+        
+        <div class="account-wrapper">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-md-8 col-lg-6">
+                        <div class="card border-0 shadow-sm rounded-3">
+                            <div class="card-body p-4 p-md-5">
+                                <h4 class="fw-bold mb-4 border-bottom pb-2">Account Settings</h4>
+                                <form id="form-account" onsubmit="handleAccountUpdate(event)">
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small fw-bold">Email address (Read Only)</label>
+                                        <input type="email" id="acc-email" class="form-control bg-light" disabled>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small fw-bold">Full Name</label>
+                                        <input type="text" id="acc-name" class="form-control" required>
+                                    </div>
+                                    
+                                    <h5 class="fw-bold mt-5 mb-3 border-bottom pb-2">Security Preferences</h5>
+                                    <div class="mb-4">
+                                        <div class="form-check form-switch mb-3">
+                                            <input class="form-check-input" type="checkbox" id="sec-show-images">
+                                            <label class="form-check-label text-muted small fw-bold" for="sec-show-images">
+                                                Always show images in the inbox emails
+                                            </label>
+                                        </div>
+                                        <div class="form-check form-switch mb-3">
+                                            <input class="form-check-input" type="checkbox" id="sec-execute-js">
+                                            <label class="form-check-label text-muted small fw-bold" for="sec-execute-js">
+                                                Always execute JavaScript content in the emails
+                                            </label>
+                                        </div>
+                                        <div class="form-check form-switch mb-3">
+                                            <input class="form-check-input" type="checkbox" id="sec-download-attachments">
+                                            <label class="form-check-label text-muted small fw-bold" for="sec-download-attachments">
+                                                Always download attachment files in received emails
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <h5 class="fw-bold mt-4 mb-3 border-bottom pb-2">Change Password</h5>
+                                        <div class="mb-3">
+                                            <label class="form-label text-muted small fw-bold">New Password</label>
+                                            <div class="input-group">
+                                                <input type="password" id="acc-new-pwd" class="form-control" placeholder="Leave blank to keep current">
+                                                <button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('acc-new-pwd', this)" title="Toggle password visibility">
+                                                    <i class="fa-solid fa-eye"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    
+                                    
+                                    <button type="submit" class="btn btn-primary mt-3 px-4 fw-bold">Save Changes</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        /* =========================================
+           DATABASE & STATE SIMULATION
+           ========================================= */
+        // Updated DB Key to force reload of new heuristic violation data
+        const DB_KEY = 'secureMail_db_condizione_b'; 
+        let currentUserEmail = sessionStorage.getItem('activeUser') || null;
+
+        const defaultData = {
+            users: [
+                { 
+                    name: 'Mario Rossi', 
+                    email: 'mario.rossi@uniba.it', 
+                    password: 'UPS_course_2025-26',
+                    requiresPasswordChange: true, // Trigger for H26 Violation
+                    settings: {
+                        showImages: false,
+                        executeJs: false,
+                        downloadAttachments: false
+                    }
+                }
+            ],
+            emails: {
+                'mario.rossi@uniba.it': [
+                    // VIOLATION: H08 (Workload-Agnostic Security Design and Phishing Susceptibility)
+                    {
+                        id: 999,
+                        senderName: 'System',
+                        senderEmail: 'System',
+                        subject: 'Security Policy Update',
+                        body: `<div style="font-family: sans-serif; font-size: 14px; color: #333; text-align: center; padding: 40px 20px;">
+                                <i class="fa-solid fa-shield-halved text-secondary mb-3" style="font-size: 3rem;"></i>
+                                <h4 class="fw-bold">Security Policy Update</h4>
+                                <p class="text-muted mb-4">A new security policy regarding data retention has been applied to your account and is available <a href="www.securemail.org/policy_2026?view_only" onclick="return false;">at this link</a>. Please acknowledge to continue working efficiently.</p>
+                                <button class="btn btn-outline-secondary px-5 py-2" onclick="document.getElementById('reading-pane-empty').classList.remove('d-none'); document.getElementById('reading-pane-content').classList.add('d-none');">Acknowledge & Close</button>
+                               </div>`,
+                        date: new Date().toLocaleDateString(),
+                        read: false,
+                        isSystemAlert: true
+                    },
+                    // VIOLATION: H01 & H20 (Visual Aesthetics & Complacency)
+                    { 
+                        id: 4, 
+                        senderName: 'IT Helpdesk',
+                        senderEmail: 'IT-Support@uniba-update.com', 
+                        subject: 'Action Required: Verify Your Account', 
+                        body: `<div id="phish-warning-banner" style="background-color: #e9ecef; color: #495057; padding: 10px 15px; margin-bottom: 20px; border-radius: 6px; border: 1px solid #ced4da; font-size: 13px; display: flex; align-items: center;">
+                                <button onclick="document.getElementById('phish-warning-banner').remove();" style="background: none; border: none; padding: 0; margin-right: 15px; cursor: pointer; color: #6c757d; font-size: 20px; font-weight: bold; line-height: 1;" title="Dismiss">&times;</button>
+                                <div>
+                                    <i class="fa-solid fa-circle-info me-1"></i> Interacting with links in this email might be dangerous.
+                                </div>
+                               </div>
+                               <div style="font-family: sans-serif; font-size: 14px; color: #333;">
+                                <p>Dear Mario,</p>
+                                <p>We noticed an unusual login attempt on your university account. To maintain your access, please verify your credentials <b>IMMEDIATELY</b>.</p>
+                                <p>Navigate to the secure portal here:<br>
+                                <a href="http://hxiabifdml21-server.ru/login-portal" style="color: blue; text-decoration: underline;" onclick="return false;">www.uniba.it/secure-login</a></p>
+                                <p>Regards,<br>IT Helpdesk</p>
+                               </div>`, 
+                        date: new Date().toLocaleDateString(), 
+                        read: false 
+                    },
+                    // Genuine email with an attachment to test attachment-handling behaviors and complacency
+                    {
+                        id: 11,
+                        senderName: 'Antonio Bianchi',
+                        senderEmail: 'antonio.bianchi@uniba.it',
+                        subject: 'Document to review',
+                        body: `<div style="font-family: sans-serif; font-size: 14px; color: #333;">
+                                <p>Dear Mario,</p>
+                                <p>Please find attached the file we've discussed during our last meeting, which I need you to review.</p>
+                                
+                                <div style="margin: 20px 0; padding: 15px; border: 1px solid #dee2e6; border-radius: 6px; background-color: #f8f9fa; display: inline-block; text-align: center; min-width: 200px;">
+                                    <i class="fa-solid fa-file-lines text-secondary mb-2" style="font-size: 2.5rem;"></i><br>
+                                    <strong class="d-block mb-1">results.txt</strong>
+                                    <small class="text-muted d-block mb-3">9 Bytes</small>
+                                    
+                                    <a href="data:text/plain;charset=utf-8,test%20file" download="results.txt" class="btn btn-outline-primary btn-sm px-3 fw-bold">
+                                        <i class="fa-solid fa-download me-1"></i> Download File
+                                    </a>
+                                </div>
+
+                                <p>Please let me know as soon as possible. Have a nice weekend, and I hope to meet you soon.</p>
+                                <p>Antonio</p>
+                            </div>`,
+                        date: new Date().toLocaleDateString(),
+                        read: false
+                    },
+                    {
+                        id: 10,
+                        senderName: 'Policlinico di Bari',
+                        senderEmail: 'urgent-results@health-update.com',
+                        subject: 'Urgent: Policlinico di Bari - Lab Results',
+                        body: `<div style="background-color: #dc3545; color: white; padding: 20px; text-align: center; border-radius: 6px; margin-bottom: 20px;">
+                                <h2 style="margin: 0; font-weight: bold; font-size: 24px;">
+                                    <i class="fa-solid fa-file-medical me-2"></i> MEDICAL ALERT
+                                </h2>
+                            </div>
+                            <div style="font-family: sans-serif; font-size: 15px; color: #333; text-align: center; padding: 10px;">
+                                <p style="font-size: 18px; font-weight: bold; color: #dc3545;">
+                                    Your recent laboratory test results require immediate attention.
+                                </p>
+                                <p class="text-muted">
+                                    Anomalies were detected in your routine screening. Please review your secure medical report immediately to see if a follow-up consultation is necessary.
+                                </p>
+                                <button class="btn btn-danger btn-lg mt-4 px-5 fw-bold shadow-sm" onclick="return false;">
+                                    Access Secure Lab Results
+                                </button>
+                            </div>`,
+                        date: new Date().toLocaleDateString(),
+                        read: false
+                    },
+                    // Genuine-looking internal communication
+                    { 
+                        id: 5, 
+                        senderName: 'Centro Servizi Informatici (CSI)',
+                        senderEmail: 'info.csi@uniba.it', 
+                        subject: 'New People Portal ("Rubrica") Available', 
+                        body: `<div style="font-family: sans-serif; font-size: 14px; color: #333;">
+                                <p>Dear user,</p>
+                                <p>We are pleased to inform you about the complete overhaul of the "People" portal ("Rubrica").</p>
+                                <p>The creation of the new portal was also possible thanks to the U.O. URP and Redazione Web, which took care of its presentation style.</p>
+                                <p>You can access the new portal here: <br>
+                                <a href="https://persone.ict.uniba.it/" style="color: blue; text-decoration: underline;" onclick="return false;">https://persone.ict.uniba.it/</a></p>
+                                <p>Regards,<br>Centro Servizi Informatici (CSI)</p>
+                               </div>`, 
+                        date: new Date().toLocaleDateString(), 
+                        read: false 
+                    },
+                    // Random Email 1
+                    { 
+                        id: 6, 
+                        senderName: 'HR Department',
+                        senderEmail: 'hr@uniba.it', 
+                        subject: 'Upcoming Holidays 2026', 
+                        body: '<p style="font-family: sans-serif; font-size: 14px; color: #333;">Dear staff, attached is the official calendar for university closures during the upcoming summer holidays. Please plan your projects accordingly.</p>', 
+                        date: '2026-05-05', 
+                        read: true 
+                    },
+                    // Random Email 2
+                    { 
+                        id: 7, 
+                        senderName: 'GitHub Notifications',
+                        senderEmail: 'notifications@github.com', 
+                        subject: '[Security] Dependabot alert: vulnerabilities found', 
+                        body: '<p style="font-family: sans-serif; font-size: 14px; color: #333;">Dependabot has found 2 vulnerabilities in your repository "secure-auth-module". Please review and merge the automated pull requests to patch them.</p>', 
+                        date: '2026-05-06', 
+                        read: true 
+                    },
+                    // Random Email 3
+                    { 
+                        id: 8, 
+                        senderName: 'Alice Johnson',
+                        senderEmail: 'alice.j@research-partner.org', 
+                        subject: 'Meeting Notes - Project Alpha', 
+                        body: '<p style="font-family: sans-serif; font-size: 14px; color: #333;">Hi Mario, thanks for the call today. As discussed, I will send over the revised dataset by Thursday so we can finalize the paper.</p> <p>See you on Thursday! <br/>Alice</p>', 
+                        date: '2026-05-07', 
+                        read: false 
+                    },
+                    // Random Email 4
+                    { 
+                        id: 9, 
+                        senderName: 'Mensa Uniba',
+                        senderEmail: 'mensa.servizi@uniba.it', 
+                        subject: 'Menu changes for this week', 
+                        body: '<p style="font-family: sans-serif; font-size: 14px; color: #333;">Hello! Due to supplier issues, the vegetarian options on Wednesday will be updated. Please check the portal for the new daily menu.</p>', 
+                        date: '2026-05-07', 
+                        read: true 
+                    }
+                ]
+            }
+        };
+
+        function togglePasswordVisibility(inputId, buttonElement) {
+            const input = document.getElementById(inputId);
+            const icon = buttonElement.querySelector('i');
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.classList.remove('fa-eye');
+                icon.classList.add('fa-eye-slash');
+            } else {
+                input.type = 'password';
+                icon.classList.remove('fa-eye-slash');
+                icon.classList.add('fa-eye');
+            }
+        }
+
+        // Initialize mock DB
+        function getDB() {
+            let db = localStorage.getItem(DB_KEY);
+            if (!db) {
+                localStorage.setItem(DB_KEY, JSON.stringify(defaultData));
+                return defaultData;
+            }
+            return JSON.parse(db);
+        }
+
+        function saveDB(db) {
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+        }
+
+        // Run on load
+        document.addEventListener('DOMContentLoaded', () => {
+            getDB(); // ensures initialization
+            if (currentUserEmail) {
+                // Determine if user has the pending H26 mandatory reset flag
+                const db = getDB();
+                const user = db.users.find(u => u.email === currentUserEmail);
+                if (user && user.requiresPasswordChange) {
+                    showPasswordModal();
+                } else {
+                    loadAuthenticatedState();
+                }
+            } else {
+                switchView('view-login');
+                // Pre-fill login for testing convenience
+                document.getElementById('login-email').value = 'mario.rossi@uniba.it';
+                document.getElementById('login-password').value = 'UPS_course_2025-26';
+            }
+        });
+
+        /* =========================================
+           UI & ROUTING UTILITIES
+           ========================================= */
+        function switchView(viewId) {
+            document.querySelectorAll('.app-view').forEach(el => el.classList.remove('active'));
+            document.getElementById(viewId).classList.add('active');
+        }
+
+        function showUIMessage(message, type = 'danger') {
+            const alertBox = document.getElementById('global-alert');
+            const alertText = document.getElementById('global-alert-text');
+            
+            alertBox.className = `alert alert-${type} alert-dismissible fade show`;
+            alertText.innerText = message;
+            alertBox.classList.remove('d-none');
+            
+            // Auto hide after 4 seconds
+            setTimeout(() => {
+                alertBox.classList.add('d-none');
+            }, 4000);
+        }
+
+        function showPasswordModal() {
+            const pwdModal = new bootstrap.Modal(document.getElementById('passwordChangeModal'));
+            pwdModal.show();
+        }
+
+        /* =========================================
+           AUTHENTICATION CONTROLLERS
+           ========================================= */
+        function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value.trim();
+            const pwd = document.getElementById('login-password').value;
+            const db = getDB();
+
+            const user = db.users.find(u => u.email === email && u.password === pwd);
+            if (user) {
+                currentUserEmail = user.email;
+                sessionStorage.setItem('activeUser', currentUserEmail);
+                
+                // Intercept workflow if mandatory password change is flagged (H26 Violation)
+                if (user.requiresPasswordChange) {
+                    showPasswordModal();
+                } else {
+                    loadAuthenticatedState();
+                }
+            } else {
+                showUIMessage('Invalid email or password.', 'danger');
+            }
+        }
+
+        function handleMandatoryPasswordChange(e) {
+            e.preventDefault();
+            const newPwd = document.getElementById('mand-new-pwd').value;
+            const confirmPwd = document.getElementById('mand-confirm-pwd').value;
+
+            const db = getDB();
+            const userIndex = db.users.findIndex(u => u.email === currentUserEmail);
+
+            if (newPwd !== confirmPwd) {
+                showUIMessage('New passwords do not match.', 'danger');
+                return;
+            }
+
+            // Simulate updating password and clearing the block
+            db.users[userIndex].password = newPwd;
+            db.users[userIndex].requiresPasswordChange = false;
+            saveDB(db);
+
+            // Hide the modal manually
+            const modalEl = document.getElementById('passwordChangeModal');
+            const modalInstance = bootstrap.Modal.getInstance(modalEl);
+            modalInstance.hide();
+
+            showUIMessage('Password changed.', 'warning');
+            loadAuthenticatedState();
+            
+            // Clear modal inputs
+            document.getElementById('form-mandatory-pwd').reset();
+        }
+
+        function handleRegister(e) {
+            e.preventDefault();
+            const name = document.getElementById('reg-name').value.trim();
+            const email = document.getElementById('reg-email').value.trim();
+            const pwd = document.getElementById('reg-password').value;
+            const pwdConfirm = document.getElementById('reg-password-confirm').value;
+
+            if (pwd !== pwdConfirm) {
+                showUIMessage('Passwords do not match.', 'warning');
+                return;
+            }
+
+            const db = getDB();
+            if (db.users.find(u => u.email === email)) {
+                showUIMessage('An account with this email already exists.', 'danger');
+                return;
+            }
+
+            // Create user with default settings and NO mandatory reset
+            db.users.push({ 
+                name, 
+                email, 
+                password: pwd,
+                requiresPasswordChange: false,
+                settings: {
+                    showImages: false,
+                    executeJs: false,
+                    downloadAttachments: false
+                }
+            });
+            db.emails[email] = [
+                { 
+                    id: Date.now(), 
+                    senderName: 'System Admin',
+                    senderEmail: 'admin@securemail.local', 
+                    subject: 'Welcome to SecureMail!', 
+                    body: `<p>Hi ${name},</p><p>Your account has been successfully created.</p><p>Enjoy!</p>`, 
+                    date: new Date().toLocaleDateString(), 
+                    read: false 
+                }
+            ];
+            saveDB(db);
+            
+            showUIMessage('Registration successful! Please sign in.', 'success');
+            switchView('view-login');
+            
+            document.getElementById('login-email').value = email;
+            document.getElementById('login-password').value = '';
+            document.getElementById('form-register').reset();
+        }
+
+        function handleRecovery(e) {
+            e.preventDefault();
+            const email = document.getElementById('rec-email').value.trim();
+            const db = getDB();
+            
+            if (db.users.find(u => u.email === email)) {
+                showUIMessage('If an account exists, a recovery link has been sent to that email.', 'success');
+                setTimeout(() => switchView('view-login'), 2000);
+            } else {
+                showUIMessage('If an account exists, a recovery link has been sent to that email.', 'success');
+            }
+            document.getElementById('form-recovery').reset();
+        }
+
+        function handleLogout() {
+            currentUserEmail = null;
+            sessionStorage.removeItem('activeUser');
+            switchView('view-login');
+            document.getElementById('login-password').value = '';
+        }
+
+        function loadAuthenticatedState() {
+            const db = getDB();
+            const user = db.users.find(u => u.email === currentUserEmail);
+            
+            if (!user) {
+                handleLogout();
+                return;
+            }
+
+            document.getElementById('navbar-user-name').innerText = user.name;
+            document.getElementById('acc-email').value = user.email;
+            document.getElementById('acc-name').value = user.name;
+            
+            // Load user settings
+            const settings = user.settings || {};
+            document.getElementById('sec-show-images').checked = !!settings.showImages;
+            document.getElementById('sec-execute-js').checked = !!settings.executeJs;
+            document.getElementById('sec-download-attachments').checked = !!settings.downloadAttachments;
+            
+            document.getElementById('acc-new-pwd').value = '';
+
+            switchView('view-inbox');
+            renderEmails();
+            
+            document.getElementById('reading-pane-content').classList.add('d-none');
+            document.getElementById('reading-pane-empty').classList.remove('d-none');
+        }
+
+        /* =========================================
+           INBOX & EMAIL CONTROLLERS
+           ========================================= */
+        function renderEmails() {
+            const db = getDB();
+            const userEmails = db.emails[currentUserEmail] || [];
+            const container = document.getElementById('email-list-container');
+            container.innerHTML = '';
+
+            if (userEmails.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-muted small">No emails found.</div>';
+                return;
+            }
+
+            // Sort by ID descending (forces H08 ID:999 to the top)
+            const sortedEmails = [...userEmails].sort((a, b) => b.id - a.id);
+
+            sortedEmails.forEach(email => {
+                const el = document.createElement('div');
+                
+                // Add specific styling class if it's a system alert (H08 violation)
+                let cssClass = `email-item ${email.read ? '' : 'unread'}`;
+                if (email.isSystemAlert) cssClass += ' system-alert';
+                el.className = cssClass;
+                
+                el.onclick = () => viewEmail(email.id, el);
+                
+                el.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-baseline mb-1">
+                        <span class="text-truncate fw-semibold ${email.isSystemAlert ? 'text-secondary' : ''}" style="max-width: 70%;">
+                            ${email.isSystemAlert ? '<i class="fa-solid fa-bell me-1"></i> ' : ''}${email.senderName}
+                        </span>
+                        <small class="text-muted" style="font-size: 0.75rem;">${email.date}</small>
+                    </div>
+                    <div class="text-truncate small mb-1" style="color: ${email.read ? '#495057' : '#000'}">${email.subject}</div>
+                    <div class="text-truncate text-muted" style="font-size: 0.8rem;">Click to view details...</div>
+                `;
+                container.appendChild(el);
+            });
+        }
+
+        function viewEmail(id, element) {
+            document.querySelectorAll('.email-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            element.classList.remove('unread');
+
+            const db = getDB();
+            const email = db.emails[currentUserEmail].find(e => e.id === id);
+            
+            if (email) {
+                email.read = true;
+                saveDB(db);
+
+                document.getElementById('read-subject').innerText = email.subject;
+                document.getElementById('read-from-name').innerText = email.senderName;
+                document.getElementById('read-from-address').innerText = email.senderEmail;
+                
+                // Always hide the email address by default when opening a new email
+                document.getElementById('read-from-email').classList.add('d-none');
+                
+                document.getElementById('read-date').innerText = email.date;
+                
+                // ==========================================
+                // START OF THE MITIGATION CODE (CONDITION B)
+                // ==========================================
+                let htmlContent = email.body;
+
+                // We apply the warning banner ONLY if the user clicks on the Task 3 email (IT Helpdesk, ID 4)
+                if (email.id === 4 || email.subject.includes("Verify")) {
+                    const securityBanner = `
+                    <div style="background-color: #fff3cd; color: #856404; border: 1px solid #ffeeba; padding: 12px; margin-bottom: 15px; border-radius: 4px; font-weight: bold; font-family: Arial, sans-serif; display: flex; align-items: center; gap: 10px; width: 100%; box-sizing: border-box;">
+                        <span style="font-size: 1.2em;">⚠️</span>
+                        <span>Attenzione: il mittente di questa email non appartiene alla tua organizzazione. Fai attenzione ai link e alle richieste urgenti.</span>
+                    </div>
+                    `;
+                    // Prepend the banner to the email's body
+                    htmlContent = securityBanner + htmlContent;
+                }
+                
+                // Using innerHTML to render the modified HTML payloads
+                document.getElementById('read-body').innerHTML = htmlContent;
+                // ==========================================
+                // END OF THE MITIGATION CODE
+                // ==========================================
+
+                document.getElementById('reading-pane-empty').classList.add('d-none');
+                document.getElementById('reading-pane-content').classList.remove('d-none');
+            }
+        }
+
+        /* =========================================
+           ACCOUNT SETTINGS CONTROLLER
+           ========================================= */
+        function handleAccountUpdate(e) {
+            e.preventDefault();
+            const newName = document.getElementById('acc-name').value.trim();
+            const newPwd = document.getElementById('acc-new-pwd').value;
+            
+            // Get security preferences
+            const showImages = document.getElementById('sec-show-images').checked;
+            const executeJs = document.getElementById('sec-execute-js').checked;
+            const downloadAttachments = document.getElementById('sec-download-attachments').checked;
+
+            const db = getDB();
+            const userIndex = db.users.findIndex(u => u.email === currentUserEmail);
+
+            if (userIndex !== -1) {
+                db.users[userIndex].name = newName;
+                db.users[userIndex].settings = {
+                    showImages,
+                    executeJs,
+                    downloadAttachments
+                };
+
+                if (newPwd.length > 0) {
+                    db.users[userIndex].password = newPwd;
+                }
+                saveDB(db);
+                
+                document.getElementById('navbar-user-name').innerText = newName;
+                showUIMessage('Account successfully updated.', 'success');
+                document.getElementById('acc-new-pwd').value = ''; 
+            }
+        }
+    </script>
+</body>
+</html>
